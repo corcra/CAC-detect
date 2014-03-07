@@ -88,7 +88,7 @@ for K in range(1,20):
 
 best_accuracy=max(knn_accuracies)
 best_K=[i for i in range(len(knn_accuracies)) if knn_accuracies[i]==best_accuracy]
-print "Using K =","["+",".join(map(str,best_K))+"]","for best accuracy = ",100*best_accuracy
+print "Using K =","["+",".join(map(str,best_K))+"]","for best accuracy = %2.2f%%" % (100*best_accuracy)
 
 # SVM!
 # Why this width? Why this kernel? All good questions! They need answers.
