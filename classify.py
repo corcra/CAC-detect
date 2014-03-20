@@ -19,7 +19,9 @@ if len(sys.argv)<4:
 # Parameters (tune these!)
 train_frac = float(sys.argv[2])
 # what fold cross-validation?
-cross_val = int(100)
+cross_val = int(10)
+# choose values of K (for kNN) from...
+k_opts = [int(sys.argv[3])]
 
 # Option
 verbose=False
@@ -35,34 +37,37 @@ header = datafile.readline().strip().split(',')
 for line in datafile:
     vals=line.strip().split(',')
     # assuming the final column is the label
-    label=int(vals[-1])
-    Y_list.append(label)
-    features=map(float,vals[:-1])
-    X_list.append(features)
+    if not 'inf' in vals:
+        label=int(vals[-1])
+        features=map(float,vals[1:-1])
+        X_list.append(features)
+        Y_list.append(label)
 
-print 'Number of features:',len(X_list[0])
 # number of examples
 n = len(Y_list)
 
 # turn to numpy arrays
 Y_array = np.array(Y_list,dtype=np.double)
-# how many of each example do we have?
-for label in np.unique(Y_array):
-    print 'Class:',int(label),':', sum(Y_array==label), 'examples'
-
-# centre and scale the data
 X_prenorm = np.array(X_list)
-X_trimmed = delete(X_prenorm,0,1)
-# note transposition here!
-X_array = X_trimmed.transpose()
-print X_array.size
 
+# normalise (subtracting mean, dividing by s.d.)
+X_normalised = (X_prenorm - np.mean(X_prenorm,0))/np.sqrt(np.var(X_prenorm,0))
+# transpose (shogun expects this format)
+X_array = X_normalised.transpose()
 
 # keep this at a fixed number for reproducibility (if desired)
 random.seed()
 
-print 'Number of training examples:',int(train_frac*n)
+# summarise settings, etc.
+print 'Number of features:',len(X_list[0])
+# how many of each example do we have?
+for label in np.unique(Y_array):
+    print 'Class:',int(label),':', sum(Y_array==label), 'examples'
+print 'Number of training examples:',int(train_frac*n),'('+str(train_frac*100)+'%)'
 print 'Number of testing examples:',n-int(train_frac*n)
+print 'Total data size:',n
+print 'Using '+str(cross_val)+'-fold cross-validation.\n'
+print 'K = '+' '.join(map(str,k_opts))
 
 knn_accuracy=[]
 svm_accuracy=[]
@@ -94,8 +99,7 @@ for i in range(cross_val):
     dist = EuclideanDistance()
     knn_evaluator = MulticlassAccuracy()
     knn_accuracies=[]
-#    k_opts = range(20)
-    k_opts = [int(sys.argv[3])]
+#j    k_opts = range(20)
     for K in k_opts:
         knn = KNN(K,dist,multi_labels)
         knn.train(features)
@@ -122,5 +126,5 @@ for i in range(cross_val):
     if verbose: print "Accuracy = %2.2f%%" % (100*svm_acc)
     svm_accuracy.append(svm_acc)
 
-print 'kNN:', np.mean(knn_accuracy), np.sqrt(np.var(knn_accuracy))
-print 'SVM:', np.mean(svm_accuracy), np.sqrt(np.var(svm_accuracy))
+print 'kNN:', '%2.3f' % np.mean(knn_accuracy), ' (%2.3f)' % np.sqrt(np.var(knn_accuracy))
+print 'SVM:', '%2.3f' % np.mean(svm_accuracy), ' (%2.3f)' % np.sqrt(np.var(svm_accuracy))
