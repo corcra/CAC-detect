@@ -11,12 +11,18 @@ import numpy as np
 import sys
 from numpy import random
 from modshogun import *
+from scipy import delete
 
-if len(sys.argv)<3:
-    sys.exit('USAGE: python classify.py data.csv train_frac')
+if len(sys.argv)<4:
+    sys.exit('USAGE: python classify.py data.csv train_frac K')
 
 # Parameters (tune these!)
 train_frac = float(sys.argv[2])
+# what fold cross-validation?
+cross_val = int(100)
+
+# Option
+verbose=False
 
 # Prepare 'data frames'
 Y_list = []
@@ -44,61 +50,77 @@ Y_array = np.array(Y_list,dtype=np.double)
 for label in np.unique(Y_array):
     print 'Class:',int(label),':', sum(Y_array==label), 'examples'
 
+# centre and scale the data
+X_prenorm = np.array(X_list)
+X_trimmed = delete(X_prenorm,0,1)
 # note transposition here!
-X_array = np.array(X_list).transpose()
+X_array = X_trimmed.transpose()
+print X_array.size
+
 
 # keep this at a fixed number for reproducibility (if desired)
-random.seed(0)
+random.seed()
 
-# Split into training and testing
-subset = random.permutation(n)
-training_indices = subset[:int(train_frac*n)]
-testing_indices = subset[int(train_frac*n):]
 print 'Number of training examples:',int(train_frac*n)
 print 'Number of testing examples:',n-int(train_frac*n)
 
-X_train = X_array[:,training_indices]
-Y_train = Y_array[training_indices]
+knn_accuracy=[]
+svm_accuracy=[]
+for i in range(cross_val):
+    # Split into training and testing
+    subset = random.permutation(n)
+    training_indices = subset[:int(train_frac*n)]
+    testing_indices = subset[int(train_frac*n):]
 
-X_test = X_array[:,testing_indices]
-Y_test = Y_array[testing_indices]
+    X_train = X_array[:,training_indices]
+    Y_train = Y_array[training_indices]
 
-# Convert data to shogun objects
-# Multiclass, 0,1,2,3
-features = RealFeatures(X_train)
-features_test = RealFeatures(X_test)
+    X_test = X_array[:,testing_indices]
+    Y_test = Y_array[testing_indices]
 
-multi_labels = MulticlassLabels(Y_train)
-multi_labels_test = MulticlassLabels(Y_test)
+    # Convert data to shogun objects
+    # Multiclass, 0,1,2,3
+    features = RealFeatures(X_train)
+    features_test = RealFeatures(X_test)
 
-bin_labels = BinaryLabels(1*(Y_train!=0)+(-1)*(Y_train==0))
-bin_labels_test = BinaryLabels(1*(Y_test!=0)+(-1)*(Y_test==0))
+    multi_labels = MulticlassLabels(Y_train)
+    multi_labels_test = MulticlassLabels(Y_test)
 
-# kNN!
-print "(kNN)",
-dist = EuclideanDistance()
-knn_evaluator = MulticlassAccuracy()
-knn_accuracies=[]
-for K in range(1,20):
-    knn = KNN(K,dist,multi_labels)
-    knn.train(features)
-    knn_preds = knn.apply_multiclass(features_test)
-    knn_accuracy= knn_evaluator.evaluate(knn_preds,multi_labels_test)
-    knn_accuracies.append(knn_accuracy)
+    bin_labels = BinaryLabels(1*(Y_train!=0)+(-1)*(Y_train==0))
+    bin_labels_test = BinaryLabels(1*(Y_test!=0)+(-1)*(Y_test==0))
 
-best_accuracy=max(knn_accuracies)
-best_K=[i for i in range(len(knn_accuracies)) if knn_accuracies[i]==best_accuracy]
-print "Using K =","["+",".join(map(str,best_K))+"]","for best accuracy = %2.2f%%" % (100*best_accuracy)
+    # kNN!
+    if verbose: print "(kNN)",
+    dist = EuclideanDistance()
+    knn_evaluator = MulticlassAccuracy()
+    knn_accuracies=[]
+#    k_opts = range(20)
+    k_opts = [int(sys.argv[3])]
+    for K in k_opts:
+        knn = KNN(K,dist,multi_labels)
+        knn.train(features)
+        knn_preds = knn.apply_multiclass(features_test)
+        knn_acc= knn_evaluator.evaluate(knn_preds,multi_labels_test)
+        knn_accuracies.append(knn_acc)
 
-# SVM!
-# Why this width? Why this kernel? All good questions! They need answers.
-print '(SVM) Using a Gaussian kernel.',
-width = 2
-kernel = GaussianKernel(features, features, width)
-C = 1.0
-svm = SVMLight(C, kernel, bin_labels)
-_=svm.train()
-svm_preds = svm.apply(features_test)
-svm_evaluator = AccuracyMeasure()
-svm_accuracy= svm_evaluator.evaluate(svm_preds,bin_labels_test)
-print "Accuracy = %2.2f%%" % (100*svm_accuracy)
+    best_accuracy=max(knn_accuracies)
+    knn_accuracy.append(best_accuracy)
+    best_K=[k_opts[i] for i in range(len(knn_accuracies)) if knn_accuracies[i]==best_accuracy]
+    if verbose: print "Using K =","["+",".join(map(str,best_K))+"]","for best accuracy = %2.2f%%" % (100*best_accuracy)
+
+    # SVM!
+    # Why this width? Why this kernel? All good questions! They need answers.
+    if verbose: print '(SVM) Using a Gaussian kernel.',
+    width = 2
+    kernel = GaussianKernel(features, features, width)
+    C = 1.0
+    svm = LibSVM(C, kernel, bin_labels)
+    _=svm.train()
+    svm_preds = svm.apply(features_test)
+    svm_evaluator = AccuracyMeasure()
+    svm_acc= svm_evaluator.evaluate(svm_preds,bin_labels_test)
+    if verbose: print "Accuracy = %2.2f%%" % (100*svm_acc)
+    svm_accuracy.append(svm_acc)
+
+print 'kNN:', np.mean(knn_accuracy), np.sqrt(np.var(knn_accuracy))
+print 'SVM:', np.mean(svm_accuracy), np.sqrt(np.var(svm_accuracy))
