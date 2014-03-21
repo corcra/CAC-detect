@@ -1,9 +1,9 @@
 #!/bin/bash
 
 pos_cac=pos_train.csv
-neg_ac=neg_train_ac.csv
-neg_mc=neg_train_mc.csv
-neg_oc=neg_train_oc.csv
+neg_ac=neg_train_nac.csv
+neg_mc=neg_train_nmc.csv
+neg_oc=neg_train_noc.csv
 
 # sed bit is to strip the header line
 sed '1d' $pos_cac | awk 'BEGIN{FS=","}{ print $0","0 }' > cac.temp

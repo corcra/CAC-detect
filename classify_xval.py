@@ -22,7 +22,7 @@ K = int(sys.argv[3])
 
 # Options
 verbose=False
-BINARY=False
+BINARY=True
 
 # Parameters
 alpha = 0.05
@@ -58,14 +58,15 @@ X_array = X_normalised.transpose()
 # keep this at a fixed number for reproducibility (if desired)
 random.seed()
 
-# summarise settings, etc.
-print 'Number of features:',len(X_list[0])
-print 'Total data size:',n
-# how many of each example do we have?
-for label in np.unique(Y_array):
-    print 'Class:',int(label),':', sum(Y_array==label), 'examples'
-print 'Using '+str(cross_val)+'-fold cross-validation.'
-print 'For kNN, K = ',K,'\n'
+if verbose:
+    # summarise settings, etc.
+    print 'Number of features:',len(X_list[0])
+    if verbose: print 'Total data size:',n
+    # how many of each example do we have?
+    for label in np.unique(Y_array):
+        print 'Class:',int(label),':', sum(Y_array==label), 'examples'
+    print 'Using '+str(cross_val)+'-fold cross-validation.'
+print 'For kNN, K = ',K
 
 knn_accuracy=[]
 svm_accuracy=[]
@@ -92,9 +93,9 @@ if BINARY:
     print 'Doing binary prediction!'
     svm_labels = BinaryLabels((-1)*(Y_array!=0)+(1)*(Y_array==0))
     knn_labels = MulticlassLabels(np.array(1*(Y_array!=0)+2*(Y_array==0),dtype=np.double))
-    svm_metric = AccuracyMeasure()
-   # svm_metric = RecallMeasure()
-   # svm_metric = SpecificityMeasure()
+  #  svm_metric = AccuracyMeasure()
+    svm_metric = RecallMeasure()
+  #  svm_metric = SpecificityMeasure()
     knn_metric = MulticlassAccuracy()
     svm = LibSVM(C,kernel,svm_labels)
     knn = KNN(K,dist,knn_labels)

@@ -21,7 +21,7 @@ train_frac = float(sys.argv[2])
 # what fold cross-validation?
 cross_val = int(10)
 # choose values of K (for kNN) from...
-k_opts = [int(sys.argv[3])]
+K = int(sys.argv[3])
 
 # Option
 verbose=False
@@ -60,14 +60,14 @@ random.seed()
 
 # summarise settings, etc.
 print 'Number of features:',len(X_list[0])
+print 'Total data size:',n
 # how many of each example do we have?
 for label in np.unique(Y_array):
     print 'Class:',int(label),':', sum(Y_array==label), 'examples'
 print 'Number of training examples:',int(train_frac*n),'('+str(train_frac*100)+'%)'
 print 'Number of testing examples:',n-int(train_frac*n)
-print 'Total data size:',n
 print 'Using '+str(cross_val)+'-fold cross-validation.\n'
-print 'K = '+' '.join(map(str,k_opts))
+print 'K = ',K
 
 knn_accuracy=[]
 svm_accuracy=[]
@@ -99,18 +99,12 @@ for i in range(cross_val):
     dist = EuclideanDistance()
     knn_evaluator = MulticlassAccuracy()
     knn_accuracies=[]
-#j    k_opts = range(20)
-    for K in k_opts:
-        knn = KNN(K,dist,multi_labels)
-        knn.train(features)
-        knn_preds = knn.apply_multiclass(features_test)
-        knn_acc= knn_evaluator.evaluate(knn_preds,multi_labels_test)
-        knn_accuracies.append(knn_acc)
-
-    best_accuracy=max(knn_accuracies)
-    knn_accuracy.append(best_accuracy)
-    best_K=[k_opts[i] for i in range(len(knn_accuracies)) if knn_accuracies[i]==best_accuracy]
-    if verbose: print "Using K =","["+",".join(map(str,best_K))+"]","for best accuracy = %2.2f%%" % (100*best_accuracy)
+    knn = KNN(K,dist,multi_labels)
+    knn.train(features)
+    knn_preds = knn.apply_multiclass(features_test)
+    knn_acc= knn_evaluator.evaluate(knn_preds,multi_labels_test)
+    knn_accuracy.append(knn_acc)
+    if verbose: print "Using K =",str(K)+". Accuracy = %2.2f%%" % (100*best_accuracy)
 
     # SVM!
     # Why this width? Why this kernel? All good questions! They need answers.
