@@ -22,7 +22,7 @@ K = int(sys.argv[3])
 
 # Options
 verbose=False
-binary=True
+BINARY=False
 
 # Parameters
 alpha = 0.05
@@ -71,38 +71,52 @@ knn_accuracy=[]
 svm_accuracy=[]
 features = RealFeatures(X_array)
 
-# svm kernel details
-width = 2
-kernel = GaussianKernel(features, features, width)
-C = 1.0
-
 # knn stuff
 dist = EuclideanDistance()
 
+# svm kernel details
+width = 10
+C = 1.0
+d = 2
+inhomo = True
+size = 1
+#kernel = GaussianKernel(features, features, width)
+kernel = PolyKernel(features, features, d, inhomo)
+#kernel = ExponentialKernel(features, features, width, dist, size)
+#kernel = LinearKernel(features, features)
+print 'For SVM, using',kernel.get_name()
+#, 'width:',kernel.get_width()
+
 MulticlassLabels(Y_array)
-if binary:
+if BINARY:
     print 'Doing binary prediction!'
     svm_labels = BinaryLabels((-1)*(Y_array!=0)+(1)*(Y_array==0))
     knn_labels = MulticlassLabels(np.array(1*(Y_array!=0)+2*(Y_array==0),dtype=np.double))
-#    metric = AccuracyMeasure()
-    svm_metric = SpecificityMeasure()
+    svm_metric = AccuracyMeasure()
+   # svm_metric = RecallMeasure()
+   # svm_metric = SpecificityMeasure()
     knn_metric = MulticlassAccuracy()
     svm = LibSVM(C,kernel,svm_labels)
     knn = KNN(K,dist,knn_labels)
     lock = False
 else:
     print 'Doing multiclass prediction!'
-    labels = MulticlassLabels(Y_array)
-    knn_labels = labels
+    svm_labels = MulticlassLabels(Y_array)
+    knn_labels = svm_labels
     svm_metric = MulticlassAccuracy()
     knn_metric = MulticlassAccuracy()
     svm = GMNPSVM(C,kernel,svm_labels)
+    #svm = LibSVMMultiClass(C,kernel,svm_labels)
     knn = KNN(K,dist,knn_labels)
     lock = False
 
 # Split strategy for cross-validation
-svm_split = StratifiedCrossValidationSplitting(svm_labels,cross_val)
-knn_split = StratifiedCrossValidationSplitting(knn_labels,cross_val)
+if BINARY or cross_val<=9:
+    svm_split = StratifiedCrossValidationSplitting(svm_labels,cross_val)
+    knn_split = StratifiedCrossValidationSplitting(knn_labels,cross_val)
+else:
+    svm_split = CrossValidationSplitting(svm_labels,cross_val)
+    knn_split = CrossValidationSplitting(knn_labels,cross_val)
 
 # SVM
 cross_svm = CrossValidation(svm, features, svm_labels, svm_split, svm_metric, lock)
@@ -110,7 +124,7 @@ cross_svm.set_num_runs(25)
 cross_svm.set_conf_int_alpha(alpha)
 result_svm=cross_svm.evaluate()
 result_svm=CrossValidationResult.obtain_from_generic(result_svm)
-print "SVM: (",svm_metric.get_name(),") %2.3f" % result_svm.conf_int_low, "[ %2.3f"  %result_svm.mean, "- %2.3f" % result_svm.conf_int_up,"]",str((1-alpha)*100),"% CI"
+print "SVM: (",svm_metric.get_name(),") %2.3f" % result_svm.mean, "[ %2.3f"  %result_svm.conf_int_low, "- %2.3f" % result_svm.conf_int_up,"]",str((1-alpha)*100),"% CI"
 trained_svm = cross_svm.get_machine()
 
 
@@ -120,12 +134,12 @@ cross_knn.set_num_runs(25)
 cross_knn.set_conf_int_alpha(alpha)
 result_knn=cross_knn.evaluate()
 result_knn=CrossValidationResult.obtain_from_generic(result_knn)
-print "kNN: (",knn_metric.get_name(),") %2.3f" % result_knn.conf_int_low, "[ %2.3f"  %result_knn.mean, "- %2.3f" % result_knn.conf_int_up,"]",str((1-alpha)*100),"% CI"
+print "kNN: (",knn_metric.get_name(),") %2.3f" % result_knn.mean, "[ %2.3f"  %result_knn.conf_int_low, "- %2.3f" % result_knn.conf_int_up,"]",str((1-alpha)*100),"% CI"
 trained_knn = cross_knn.get_machine()
 
 # This particular analysis isn't great given I'm doing the cross-validation, I should just be converting the predicted specificity etc. into volumes.
 # The problem with this is if the wrongly-predicted calcifications have a different volume distribution to the whole population, in which case the volume-based metric may be over or underestimated.
-if binary:
+if BINARY:
     preds_svm = trained_svm.apply_binary(features)
     preds_knn = trained_knn.apply_multiclass(features)
    
