@@ -82,10 +82,10 @@ dist = EuclideanDistance()
 MulticlassLabels(Y_array)
 if binary:
     print 'Doing binary prediction!'
-    svm_labels = BinaryLabels(1*(Y_array!=0)+(-1)*(Y_array==0))
+    svm_labels = BinaryLabels((-1)*(Y_array!=0)+(1)*(Y_array==0))
     knn_labels = MulticlassLabels(np.array(1*(Y_array!=0)+2*(Y_array==0),dtype=np.double))
 #    metric = AccuracyMeasure()
-    svm_metric = PrecisionMeasure()
+    svm_metric = SpecificityMeasure()
     knn_metric = MulticlassAccuracy()
     svm = LibSVM(C,kernel,svm_labels)
     knn = KNN(K,dist,knn_labels)
@@ -111,6 +111,8 @@ cross_svm.set_conf_int_alpha(alpha)
 result_svm=cross_svm.evaluate()
 result_svm=CrossValidationResult.obtain_from_generic(result_svm)
 print "SVM: (",svm_metric.get_name(),") %2.3f" % result_svm.conf_int_low, "[ %2.3f"  %result_svm.mean, "- %2.3f" % result_svm.conf_int_up,"]",str((1-alpha)*100),"% CI"
+trained_svm = cross_svm.get_machine()
+
 
 # kNN
 cross_knn = CrossValidation(knn, features, knn_labels, knn_split, knn_metric, lock)
@@ -119,3 +121,41 @@ cross_knn.set_conf_int_alpha(alpha)
 result_knn=cross_knn.evaluate()
 result_knn=CrossValidationResult.obtain_from_generic(result_knn)
 print "kNN: (",knn_metric.get_name(),") %2.3f" % result_knn.conf_int_low, "[ %2.3f"  %result_knn.mean, "- %2.3f" % result_knn.conf_int_up,"]",str((1-alpha)*100),"% CI"
+trained_knn = cross_knn.get_machine()
+
+# This particular analysis isn't great given I'm doing the cross-validation, I should just be converting the predicted specificity etc. into volumes.
+# The problem with this is if the wrongly-predicted calcifications have a different volume distribution to the whole population, in which case the volume-based metric may be over or underestimated.
+if binary:
+    preds_svm = trained_svm.apply_binary(features)
+    preds_knn = trained_knn.apply_multiclass(features)
+   
+    # Positive Indices
+    true = np.where(Y_array==0)[0]
+    false = np.where(Y_array!=0)[0]
+
+    positive_svm = np.where(preds_svm[:]==1)[0]
+    negative_svm = np.where(preds_svm[:]==(-1))[0]
+    tp_svm = np.intersect1d(true,positive_svm)
+    fp_svm = np.intersect1d(false,positive_svm)
+
+    positive_knn = np.where(preds_knn[:]==2)[0]
+    negative_knn = np.where(preds_knn[:]==1)[0]
+    tp_knn = np.intersect1d(true,positive_knn)
+    fp_knn = np.intersect1d(false,positive_knn)
+
+    # Specify to volumes (to compare with Isgum et al)
+    volumes = X_prenorm[:,0]
+    true_volume = sum(volumes[true])
+    false_volume = sum(volumes[false])
+
+    tp_svm_volume = sum(volumes[tp_svm])
+    fp_svm_volume = sum(volumes[fp_svm])
+
+    tp_knn_volume = sum(volumes[tp_knn])
+    fp_knn_volume = sum(volumes[fp_knn])
+
+    TPR_svm_volume = tp_svm_volume/true_volume
+    FPR_svm_volume = fp_svm_volume/false_volume
+    
+    TPR_knn_volume = tp_knn_volume/true_volume
+    FPR_knn_volume = fp_knn_volume/false_volume
