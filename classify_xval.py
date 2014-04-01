@@ -26,20 +26,21 @@ BINARY=True
 
 # Parameters
 alpha = 0.05
+label_col = int(-2)
 
 # Prepare 'data frames'
 Y_list = []
 X_list = []
 
 # Parse the data
-datafile = open(datapath,'r')
+datafile = open(datapath,'rU')
 header = datafile.readline().strip().split(',')
 for line in datafile:
     vals=line.strip().split(',')
-    # assuming the final column is the label
     if not 'inf' in vals:
-        label=int(vals[-1])
-        features=map(float,vals[1:-1])
+        label=int(vals[label_col])
+        # not interested in the final 5 columns
+        features=map(float,vals[1:-5])
         X_list.append(features)
         Y_list.append(label)
 
