@@ -15,16 +15,23 @@ import sys
 import math
 import random
 
+# --- Parameters --- #
 # the patient id is the final column
 id_col = -1
 # any other indices to drop? (this is dataspecific...)
 lose_indices = [16,17,18,20]
+keep_indices = [i for i in range(21) if not i in lose_indices]
+            #prep_line = [splitline[i] for i in keep_indices]
+# spatial indices, for calculating distances (we should be losing these anyway)
+space_indices = [16,17,18]
 # what features to use? (select this!)
 n_features = 16
 # how many states (2)
 n_states = 2
 # what fraction of the data to use for testing?
 test_frac = 0.1
+# radius for 'neighbourness'? (atm totally arbitrary)
+radius = 30
 
 def get_contingency(pred,true):
     pos = np.where(true==1)
@@ -44,6 +51,17 @@ def get_labels(X):
     graph_obs = FactorGraphObservation(Y, loss_weights)
     return graph_obs
 
+def get_neighbours(X):
+    n_node = X.shape[0]
+    nbs = []
+    for n in xrange(n_node):
+        for nn in xrange(n+1,n_node):
+            distance = np.linalg.norm(X[n,space_indices]-X[nn,space_indices])
+            if distance<radius:
+                print 'neighbours!', n, nn, distance
+                nbs.append((n,nn))
+    return nbs
+
 def get_features(fg,X,ftypes):
     # input is a list of calcifications with their features (excluding label)
     # question: normalisation of this...? can't really locally whiten this
@@ -53,7 +71,8 @@ def get_features(fg,X,ftypes):
 
     # unary
     for c in xrange(n_calc):
-        dat_unary = np.array(1*(X[c,:]>0.5),dtype=float)
+        dat_unary = X[c,keep_indices]
+#        dat_unary = np.array(1*(X[c,:]>0.5),dtype=float)
         #print dat_unary
         #print 'n_calc:', n_calc
         #print 'data shape:',dat_unary.shape
@@ -62,9 +81,10 @@ def get_features(fg,X,ftypes):
         fg.add_factor(fac_unary)
 
     # pairwise (for now, arbitrary/random/weird)
-    for cc in xrange(n_calc-1):
+    # pairwise
+    for pair in get_neighbours(X):
         dat_p = np.array([1.0])
-        calc_index_p = np.array([cc,cc+1],np.int32)
+        calc_index_p = np.array(pair,np.int32)
         fac_p = Factor(ftypes[1],calc_index_p,dat_p)
         fg.add_factor(fac_p)
 
@@ -79,8 +99,8 @@ def get_features(fg,X,ftypes):
 #    print 'edges:',fg.get_num_edges()
 #    print 'factors:',fg.get_num_factors()
 #    # uncomment for errors...
-#    print 'acyclic?', fg.is_acyclic_graph()
-#    print 'connected?', fg.is_connected_graph()
+    print 'acyclic?', fg.is_acyclic_graph()
+    print 'connected?', fg.is_connected_graph()
 #    print 'tree graph?',fg.is_tree_graph()
     return fg
 
@@ -120,8 +140,7 @@ def get_samples_labels(data,ftypes):
 
         patient_fg = FactorGraph(VC)
 
-        # remember, the last column is the label, here...
-        patient_fg = get_features(patient_fg, patient_data[:,:-1],ftypes)
+        patient_fg = get_features(patient_fg, patient_data,ftypes)
         patient_labels = get_labels(patient_data)
 
         samples.add_sample(patient_fg)
@@ -136,16 +155,13 @@ def parse_data(datafile):
     # within each CAC, we have the raw information
     header = datafile.readline()
     data = dict()
-    keep_indices = [i for i in range(21) if not i in lose_indices]
     for line in datafile:
         splitline = line.strip().split(',')
         patient_id = splitline[id_col]
         try:
-            prep_line = [splitline[i] for i in keep_indices]
-            data[patient_id].append(prep_line)
+            data[patient_id].append(splitline)
         except KeyError:
-            prep_line = [splitline[i] for i in keep_indices]
-            data[patient_id] = [prep_line]
+            data[patient_id] = [splitline]
     return data 
 
 # --- end of functions --- #
@@ -219,6 +235,7 @@ print "Testing on",n_test,"patients, with",sum(contingency),"calcifications."
 print("Sensitivity: %.4f" % sens)
 print("Specificity: %.4f" % spec)
 
+# From here on it's just basically a direct copy from the notebook, I should work through this myself as well.
 # training error of BMRM method
 bmrm.set_w(weights_bmrm)
 model.w_to_fparams(weights_bmrm)
