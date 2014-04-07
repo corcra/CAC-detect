@@ -26,7 +26,7 @@ def get_labels(X):
     # labels are the last column
     n_calc = X.shape[0]
     n_vars = X.shape[1]-1
-    Y = X[:,-1].astype(np.int32)
+    Y = 1*(X[:,-1]==0).astype(np.int32)
     loss_weights = np.array([1.0/n_calc]*n_calc)
     graph_obs = FactorGraphObservation(Y, loss_weights)
     return graph_obs
@@ -40,7 +40,10 @@ def get_features(fg,X,ftypes):
 
     # unary
     for c in xrange(n_calc):
-        dat_unary = X[c,:]
+        dat_unary = np.array(1*(X[c,:]>0.5),dtype=float)
+        print dat_unary
+        print 'n_calc:', n_calc
+        print 'data shape:',dat_unary.shape
         calc_index_unary = np.array([c],np.int32)
         fac_unary = Factor(ftypes[0],calc_index_unary,dat_unary)
         fg.add_factor(fac_unary)
@@ -58,13 +61,14 @@ def get_features(fg,X,ftypes):
     fac_bias = Factor(ftypes[2],calc_index_bias,dat_bias)
     fg.add_factor(fac_bias)
 
-    print 'calcs:',n_calc
-    print 'vars:',n_vars
-    print 'edges:',fg.get_num_edges()
-    print 'factors:',fg.get_num_factors()
-    print 'acyclic?', fg.is_acyclic_graph()
-    print 'connected?', fg.is_connected_graph()
-    print 'tree graph?',fg.is_tree_graph()
+#    print 'calcs:',n_calc
+#    print 'vars:',n_vars
+#    print 'edges:',fg.get_num_edges()
+#    print 'factors:',fg.get_num_factors()
+#    # uncomment for errors...
+#    print 'acyclic?', fg.is_acyclic_graph()
+#    print 'connected?', fg.is_connected_graph()
+#    print 'tree graph?',fg.is_tree_graph()
     return fg
 
 def get_ftypes(n_features):
@@ -103,7 +107,8 @@ def get_samples_labels(data,ftypes):
 
         patient_fg = FactorGraph(VC)
 
-        patient_fg = get_features(patient_fg, patient_data,ftypes)
+        # remember, the last column is the label, here...
+        patient_fg = get_features(patient_fg, patient_data[:,:-1],ftypes)
         patient_labels = get_labels(patient_data)
 
         samples.add_sample(patient_fg)
@@ -155,7 +160,7 @@ bmrm.set_verbose(True)
 t0 = time.time()
 bmrm.train()
 t1 = time.time()
-
+#
 weights_bmrm = bmrm.get_w()
 
 print 'Took', t1-t0,'seconds.'
