@@ -26,6 +26,15 @@ n_states = 2
 # what fraction of the data to use for testing?
 test_frac = 0.1
 
+def get_contingency(pred,true):
+    pos = np.where(true==1)
+    neg = np.where(true==0)
+    TP = sum(pred[pos]==1)
+    FP = sum(pred[neg]==1)
+    TN = sum(pred[neg]==0)
+    FN = sum(pred[pos]==0)
+    return np.array([TP,FP,TN,FN])
+
 def get_labels(X):
     # labels are the last column
     n_calc = X.shape[0]
@@ -173,7 +182,7 @@ bmrm = DualLibQPBMSOSVM(model, train_labels, 0.01)
 
 # absolute tolerance (parameter)
 bmrm.set_TolAbs(20.0)
-bmrm.set_verbose(True)
+bmrm.set_verbose(False)
 
 t0 = time.time()
 bmrm.train()
@@ -181,21 +190,34 @@ t1 = time.time()
 #
 weights_bmrm = bmrm.get_w()
 
-print 'Took', t1-t0,'seconds.'
+print "Training took", t1-t0,'seconds.'
 
 # --- Testing --- #
 test_samples, test_labels = get_samples_labels(test_data,ftypes)
-fg_test = test_samples.get_sample(2)
-fg_test.compute_energies()
-fg_test.connect_components()
 
-infer_met = MAPInference(fg_test, TREE_MAX_PROD)
-infer_met.inference()
+TP, FP, TN, FN = 0, 0, 0, 0
+contingency = np.array([TP,FP,TN,FN])
 
-y_pred = infer_met.get_structured_outputs()
-y_truth = FactorGraphObservation.obtain_from_generic(test_labels.get_label(2))
-print y_pred.get_data()
-print y_truth.get_data()
+for ts in xrange(n_test):
+    fg_test = test_samples.get_sample(ts)
+    fg_test.compute_energies()
+    fg_test.connect_components()
+
+    infer_met = MAPInference(fg_test, TREE_MAX_PROD)
+    infer_met.inference()
+
+    y_pred = infer_met.get_structured_outputs()
+    y_truth = FactorGraphObservation.obtain_from_generic(test_labels.get_label(ts))
+    contingency = contingency + get_contingency(np.array(y_pred.get_data()),np.array(y_truth.get_data()))
+
+TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
+
+sens = float(TP)/(TP+FN)
+spec = float(TN)/(FP+TN)
+
+print "Testing on",n_test,"patients, with",sum(contingency),"calcifications."
+print("Sensitivity: %.4f" % sens)
+print("Specificity: %.4f" % spec)
 
 # training error of BMRM method
 bmrm.set_w(weights_bmrm)
