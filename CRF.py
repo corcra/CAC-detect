@@ -19,19 +19,19 @@ import random
 # the patient id is the final column
 id_col = -1
 # any other indices to drop? (this is dataspecific...)
-lose_indices = [16,17,18,20]
-keep_indices = [i for i in range(21) if not i in lose_indices]
-            #prep_line = [splitline[i] for i in keep_indices]
+feature_indices = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
 # spatial indices, for calculating distances (we should be losing these anyway)
 space_indices = [16,17,18]
 # what features to use? (select this!)
-n_features = 16
+n_features = len(feature_indices)
 # how many states (2)
 n_states = 2
 # what fraction of the data to use for testing?
 test_frac = 0.1
 # radius for 'neighbourness'? (atm totally arbitrary)
 radius = 30
+# inference method?
+inference=TREE_MAX_PROD
 
 def get_contingency(pred,true):
     pos = np.where(true==1)
@@ -45,8 +45,7 @@ def get_contingency(pred,true):
 def get_labels(X):
     # labels are the last column
     n_calc = X.shape[0]
-    n_vars = X.shape[1]-1
-    Y = 1*(X[:,-1]==0).astype(np.int32)
+    Y = 1*(X[:,-2]==0).astype(np.int32)
     loss_weights = np.array([1.0/n_calc]*n_calc)
     graph_obs = FactorGraphObservation(Y, loss_weights)
     return graph_obs
@@ -67,24 +66,27 @@ def get_features(fg,X,ftypes):
     # question: normalisation of this...? can't really locally whiten this
     n_calc = X.shape[0]
     # the last 'var' is actually the label
-    n_vars = X.shape[1]
 
     # unary
     for c in xrange(n_calc):
-        dat_unary = X[c,keep_indices]
-#        dat_unary = np.array(1*(X[c,:]>0.5),dtype=float)
-        #print dat_unary
-        #print 'n_calc:', n_calc
-        #print 'data shape:',dat_unary.shape
+#        dat_unary = np.array(1*(X[c,feature_indices]>0.5),dtype=float)
+        dat_unary = X[c,feature_indices]
         calc_index_unary = np.array([c],np.int32)
         fac_unary = Factor(ftypes[0],calc_index_unary,dat_unary)
         fg.add_factor(fac_unary)
 
-    # pairwise (for now, arbitrary/random/weird)
     # pairwise
-    for pair in get_neighbours(X):
+#    for pair in get_neighbours(X):
+#        dat_p = np.array([1.0])
+#        print pair
+#        calc_index_p = np.array(pair,np.int32)
+#        fac_p = Factor(ftypes[1],calc_index_p,dat_p)
+#        fg.add_factor(fac_p)
+
+    # pairwise, adjacent
+    for cc in xrange(n_calc-1):
         dat_p = np.array([1.0])
-        calc_index_p = np.array(pair,np.int32)
+        calc_index_p = np.array([cc,cc+1],np.int32)
         fac_p = Factor(ftypes[1],calc_index_p,dat_p)
         fg.add_factor(fac_p)
 
@@ -94,13 +96,11 @@ def get_features(fg,X,ftypes):
     fac_bias = Factor(ftypes[2],calc_index_bias,dat_bias)
     fg.add_factor(fac_bias)
 
-#    print 'calcs:',n_calc
-#    print 'vars:',n_vars
-#    print 'edges:',fg.get_num_edges()
-#    print 'factors:',fg.get_num_factors()
+    #print 'calcs:',n_calc
+    #print 'edges:',fg.get_num_edges()
+    #print 'factors:',fg.get_num_factors()
 #    # uncomment for errors...
-    print 'acyclic?', fg.is_acyclic_graph()
-    print 'connected?', fg.is_connected_graph()
+#    print 'connected?', fg.is_connected_graph()
 #    print 'tree graph?',fg.is_tree_graph()
     return fg
 
@@ -188,7 +188,7 @@ for patient in data:
 # --- Create model --- #
 ftypes = get_ftypes(n_features)
 train_samples, train_labels = get_samples_labels(train_data,ftypes)
-model = FactorGraphModel(train_samples, train_labels, TREE_MAX_PROD)
+model = FactorGraphModel(train_samples, train_labels, inference)
 for ftype in ftypes:
     model.add_factor_type(ftype)
 
@@ -200,10 +200,12 @@ bmrm = DualLibQPBMSOSVM(model, train_labels, 0.01)
 bmrm.set_TolAbs(20.0)
 bmrm.set_verbose(False)
 
+print "Training on", n_train, "patients, with",sum(map(len,train_data.values())),"calcifications."
+
 t0 = time.time()
 bmrm.train()
 t1 = time.time()
-#
+
 weights_bmrm = bmrm.get_w()
 
 print "Training took", t1-t0,'seconds.'
@@ -219,7 +221,7 @@ for ts in xrange(n_test):
     fg_test.compute_energies()
     fg_test.connect_components()
 
-    infer_met = MAPInference(fg_test, TREE_MAX_PROD)
+    infer_met = MAPInference(fg_test, inference)
     infer_met.inference()
 
     y_pred = infer_met.get_structured_outputs()
@@ -228,6 +230,7 @@ for ts in xrange(n_test):
 
 TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
 
+print contingency
 sens = float(TP)/(TP+FN)
 spec = float(TN)/(FP+TN)
 
