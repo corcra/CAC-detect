@@ -198,7 +198,7 @@ bmrm = DualLibQPBMSOSVM(model, train_labels, 0.01)
 
 # absolute tolerance (parameter)
 bmrm.set_TolAbs(20.0)
-bmrm.set_verbose(False)
+bmrm.set_verbose(True)
 
 print "Training on", n_train, "patients, with",sum(map(len,train_data.values())),"calcifications."
 

@@ -21,7 +21,7 @@ cross_val = int(sys.argv[2])
 K = int(sys.argv[3])
 
 # Options
-verbose=False
+verbose=True
 BINARY=True
 
 # Parameters
@@ -96,7 +96,7 @@ if BINARY:
     knn_labels = MulticlassLabels(np.array(1*(Y_array!=0)+2*(Y_array==0),dtype=np.double))
   #  svm_metric = AccuracyMeasure()
     svm_metric = RecallMeasure()
-  #  svm_metric = SpecificityMeasure()
+   # svm_metric = SpecificityMeasure()
     knn_metric = MulticlassAccuracy()
     svm = LibSVM(C,kernel,svm_labels)
     knn = KNN(K,dist,knn_labels)
