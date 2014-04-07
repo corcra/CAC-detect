@@ -12,6 +12,8 @@ import numpy as np
 from modshogun import *
 import time
 import sys
+import math
+import random
 
 # the patient id is the final column
 id_col = -1
@@ -21,6 +23,8 @@ lose_indices = [16,17,18,20]
 n_features = 16
 # how many states (2)
 n_states = 2
+# what fraction of the data to use for testing?
+test_frac = 0.1
 
 def get_labels(X):
     # labels are the last column
@@ -36,14 +40,14 @@ def get_features(fg,X,ftypes):
     # question: normalisation of this...? can't really locally whiten this
     n_calc = X.shape[0]
     # the last 'var' is actually the label
-    n_vars = X.shape[1]-1
+    n_vars = X.shape[1]
 
     # unary
     for c in xrange(n_calc):
         dat_unary = np.array(1*(X[c,:]>0.5),dtype=float)
-        print dat_unary
-        print 'n_calc:', n_calc
-        print 'data shape:',dat_unary.shape
+        #print dat_unary
+        #print 'n_calc:', n_calc
+        #print 'data shape:',dat_unary.shape
         calc_index_unary = np.array([c],np.int32)
         fac_unary = Factor(ftypes[0],calc_index_unary,dat_unary)
         fg.add_factor(fac_unary)
@@ -142,16 +146,30 @@ datapath = sys.argv[1]
 datafile = open(datapath,'rU')
 data = parse_data(datafile)
 
+# create test/train split
+patient_ids = data.keys()
+n_test = int(math.ceil(test_frac*len(patient_ids)))
+n_train = len(patient_ids)-n_test
+test_ids = random.sample(patient_ids,n_test)
+
+test_data = dict()
+train_data = dict()
+for patient in data:
+    if patient in test_ids:
+        test_data[patient] = data[patient]
+    else:
+        train_data[patient] = data[patient]
+
 # --- Create model --- #
 ftypes = get_ftypes(n_features)
-samples, labels = get_samples_labels(data,ftypes)
-model = FactorGraphModel(samples, labels, TREE_MAX_PROD)
+train_samples, train_labels = get_samples_labels(train_data,ftypes)
+model = FactorGraphModel(train_samples, train_labels, TREE_MAX_PROD)
 for ftype in ftypes:
     model.add_factor_type(ftype)
 
 # --- Training --- #
 # bundle method for regularized risk minmisation (lambda = 0.01)
-bmrm = DualLibQPBMSOSVM(model, labels, 0.01)
+bmrm = DualLibQPBMSOSVM(model, train_labels, 0.01)
 
 # absolute tolerance (parameter)
 bmrm.set_TolAbs(20.0)
@@ -164,3 +182,44 @@ t1 = time.time()
 weights_bmrm = bmrm.get_w()
 
 print 'Took', t1-t0,'seconds.'
+
+# --- Testing --- #
+test_samples, test_labels = get_samples_labels(test_data,ftypes)
+fg_test = test_samples.get_sample(2)
+fg_test.compute_energies()
+fg_test.connect_components()
+
+infer_met = MAPInference(fg_test, TREE_MAX_PROD)
+infer_met.inference()
+
+y_pred = infer_met.get_structured_outputs()
+y_truth = FactorGraphObservation.obtain_from_generic(test_labels.get_label(2))
+print y_pred.get_data()
+print y_truth.get_data()
+
+# training error of BMRM method
+bmrm.set_w(weights_bmrm)
+model.w_to_fparams(weights_bmrm)
+lbs_bmrm = bmrm.apply()
+acc_loss = 0.0
+ave_loss = 0.0
+for i in xrange(n_train):
+    y_pred = lbs_bmrm.get_label(i)
+    y_truth = train_labels.get_label(i)
+    acc_loss = acc_loss + model.delta_loss(y_truth, y_pred)
+ave_loss = acc_loss / n_train
+print('BMRM: Average training error is %.4f' % ave_loss)
+
+# testing error
+bmrm.set_features(test_samples)
+bmrm.set_labels(test_labels)
+lbs_bmrm_ts = bmrm.apply()
+acc_loss = 0.0
+ave_loss_ts = 0.0
+
+for i in xrange(n_test):
+    y_pred = lbs_bmrm_ts.get_label(i)
+    y_truth = test_labels.get_label(i)
+    acc_loss = acc_loss + model.delta_loss(y_truth, y_pred)
+ave_loss_ts = acc_loss / n_test
+print('BMRM: Average testing error is %.4f' % ave_loss_ts)
