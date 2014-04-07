@@ -39,25 +39,35 @@ def get_features(fg,X,ftypes):
     n_vars = X.shape[1]-1
 
     # unary
-    for v in xrange(n_vars):
-        dat_unary = X[:,v]
-        var_index_unary = np.array([v],np.int32)
-        fac_unary = Factor(ftypes[0],var_index_unary,dat_unary)
+    for c in xrange(n_calc):
+        dat_unary = X[c,:]
+        calc_index_unary = np.array([c],np.int32)
+        fac_unary = Factor(ftypes[0],calc_index_unary,dat_unary)
         fg.add_factor(fac_unary)
 
     # pairwise (for now, arbitrary/random/weird)
-    for v in xrange(n_vars-1):
+    for cc in xrange(n_calc-1):
         dat_p = np.array([1.0])
-        var_index_p = np.array([v,v+1],np.int32)
-        fac_p = Factor(ftypes[1],var_index_p,dat_p)
+        calc_index_p = np.array([cc,cc+1],np.int32)
+        fac_p = Factor(ftypes[1],calc_index_p,dat_p)
         fg.add_factor(fac_p)
 
+    # "bias" (i just introduced this to see if it'd fix my problem)
+    dat_bias = np.array([1.0])
+    calc_index_bias = np.array([0],np.int32)
+    fac_bias = Factor(ftypes[2],calc_index_bias,dat_bias)
+    fg.add_factor(fac_bias)
+
+    print 'calcs:',n_calc
+    print 'vars:',n_vars
+    print 'edges:',fg.get_num_edges()
+    print 'factors:',fg.get_num_factors()
+    print 'acyclic?', fg.is_acyclic_graph()
+    print 'connected?', fg.is_connected_graph()
+    print 'tree graph?',fg.is_tree_graph()
     return fg
 
 def get_ftypes(n_features):
-    # note: there are 2 states (binary!)
-    #define the different types of factors
-
     # unary
     card_unary = np.array([n_states],np.int32)
     weights_unary = np.zeros(n_states*n_features)
@@ -68,11 +78,16 @@ def get_ftypes(n_features):
     weights_pair = np.zeros(n_states*n_states)
     fac_pair = TableFactorType(1,card_pair,weights_pair)
 
+    # "bias"
+    card_bias = np.array([n_states],np.int32)
+    weights_bias = np.zeros(n_states)
+    fac_bias = TableFactorType(2,card_bias,weights_bias)
+
     # all the params
-    weights_initial = [weights_unary,weights_pair]
+    weights_initial = [weights_unary,weights_pair,weights_bias]
 
     # all the factors
-    ftypes = [fac_unary, fac_pair]
+    ftypes = [fac_unary, fac_pair,fac_bias]
     return ftypes
 
 def get_samples_labels(data,ftypes):
@@ -83,7 +98,9 @@ def get_samples_labels(data,ftypes):
     for patient in data:
         patient_data = np.array(data[patient],dtype=float)
         # i THINK this might be a reference to VC dimension
-        VC = np.array([len(patient_data)]*n_features,np.int32)
+        n_calc = len(patient_data)
+        VC = np.array([n_states]*n_calc,np.int32)
+
         patient_fg = FactorGraph(VC)
 
         patient_fg = get_features(patient_fg, patient_data,ftypes)
