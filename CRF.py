@@ -91,10 +91,10 @@ def get_features(fg,X,ftypes):
         fg.add_factor(fac_p)
 
     # "bias" (i just introduced this to see if it'd fix my problem)
-    dat_bias = np.array([1.0])
-    calc_index_bias = np.array([0],np.int32)
-    fac_bias = Factor(ftypes[2],calc_index_bias,dat_bias)
-    fg.add_factor(fac_bias)
+#    dat_bias = np.array([1.0])
+#    calc_index_bias = np.array([0],np.int32)
+#    fac_bias = Factor(ftypes[2],calc_index_bias,dat_bias)
+#    fg.add_factor(fac_bias)
 
     #print 'calcs:',n_calc
     #print 'edges:',fg.get_num_edges()
@@ -116,15 +116,17 @@ def get_ftypes(n_features):
     fac_pair = TableFactorType(1,card_pair,weights_pair)
 
     # "bias"
-    card_bias = np.array([n_states],np.int32)
-    weights_bias = np.zeros(n_states)
-    fac_bias = TableFactorType(2,card_bias,weights_bias)
+#    card_bias = np.array([n_states],np.int32)
+#    weights_bias = np.zeros(n_states)
+#    fac_bias = TableFactorType(2,card_bias,weights_bias)
 
     # all the params
-    weights_initial = [weights_unary,weights_pair,weights_bias]
+#    weights_initial = [weights_unary,weights_pair,weights_bias]
+    weights_initial = [weights_unary,weights_pair]
 
     # all the factors
-    ftypes = [fac_unary, fac_pair,fac_bias]
+#    ftypes = [fac_unary, fac_pair,fac_bias]
+    ftypes = [fac_unary, fac_pair]
     return ftypes
 
 def get_samples_labels(data,ftypes):
