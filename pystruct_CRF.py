@@ -32,7 +32,11 @@ n_features = len(feature_indices)
 # how many states (2)
 n_states = 2
 # what fraction of the data to use for testing?
-train_frac = 0.9
+#train_frac = 0.9
+# how many xval?
+n_splits = 5
+# how many iterations?
+n_iter = 100
 # how much output to give
 verbose=True
 
@@ -89,47 +93,82 @@ def get_contingency(pred,true):
     FN = sum(pred[pos]==0)
     return np.array([TP,FP,TN,FN])
 
+def split_indices(n_examples,n_splits):
+    shuffled = np.random.permutation(n_examples)
+    n_train = int(math.floor(float(n_examples/n_splits)))
+    indices = []
+    for i in xrange(n_splits):
+        train_indices = shuffled[i:i+n_train]
+        test_indices = [i for i in shuffled if not i in train_indices]
+        indices.append((train_indices,test_indices))
+    train_indices = shuffled[i:]
+    test_indices = [i for i in shuffled if not i in train_indices]
+    indices.append((train_indices,test_indices))
+    return indices
+
 # --- Data prep --- #
 datafile = open(datapath,'rU')
 examples, labels = prepare_data(datafile)
 n_examples = len(examples)
 
-# --- Test/train split --- #
-train_indices = random.sample(range(n_examples),int(math.ceil(train_frac*n_examples)))
-X_train = [examples[i] for i in train_indices]
-Y_train = [labels[i] for i in train_indices]
-
-test_indices = [i for i in range(n_examples) if not i in train_indices]
-X_test = [examples[i] for i in test_indices]
-Y_test = [labels[i] for i in test_indices]
-
 if verbose:
     print "n_examples",n_examples
-    print "n_train:",len(train_indices)
-    print "n_test:",len(test_indices)
+#    print "n_train:",len(train_indices)     #update!
+#    print "n_test:",len(test_indices)       #update!
+    print "xval:", n_splits
 
-# --- Train model --- #
-model = GraphCRF(n_states,n_features)
-ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0)
-ssvm.fit(X_train, Y_train)
+sens_all = []
+spec_all = []
+fin_sens = []
+fin_spec = []
+# --- Let's run xval lots of times --- #
+for j in xrange(n_iter):
+    print j
 
-# --- Test with pystruct --- #
-print("Test score with graph CRF: %f" % ssvm.score(X_test, Y_test))
+    # --- Ready for xval! --- #
+    indices = split_indices(n_examples,n_splits)
 
-# --- Test manually - get contingency tables --- #
-prediction = ssvm.predict(X_test)
+    for i in xrange(n_splits):
+        train = indices[i][0]
+        test = indices[i][1]
 
-contingency = np.array([0,0,0,0])
-for i in xrange(len(test_indices)):
-    pred = prediction[i]
-    true = Y_test[i]
-    contingency = contingency+get_contingency(pred,true)
+        # sure there's a more efficient way to do this
+        # --- Test/train split --- #
+        X_train = [examples[j] for j in train]
+        Y_train = [labels[j] for j in train]
+        X_test = [examples[j] for j in test]
+        Y_test = [labels[j] for j in test]
+        
+        # --- Train model --- #
+        model = GraphCRF(n_states,n_features)
+        ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0)
+        ssvm.fit(X_train, Y_train)
 
-TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
+        # --- Test with pystruct --- #
+#        print("Test score with graph CRF: %f" % ssvm.score(X_test, Y_test))
 
-sens = float(TP)/(TP+FN)
-spec = float(TN)/(FP+TN)
+        # --- Test manually - get contingency tables --- #
+        prediction = ssvm.predict(X_test)
 
-print("Sensitivity: %f" % sens)
-print("Specificity: %f" % spec)
-print "Contingency table: (TP FP TN FN):", contingency
+        contingency = np.array([0,0,0,0])
+        for i in xrange(len(test)):
+            pred = prediction[i]
+            true = Y_test[i]
+            contingency = contingency+get_contingency(pred,true)
+
+        TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
+
+        sens = float(TP)/(TP+FN)
+        sens_all.append(sens)
+        spec = float(TN)/(FP+TN)
+        spec_all.append(spec)
+
+#        print("Sensitivity: %f" % sens)
+#        print("Specificity: %f" % spec)
+#        print "Contingency table: (TP FP TN FN):", contingency
+
+    fin_sens.append(np.mean(sens_all))
+    fin_spec.append(np.mean(spec_all))
+
+print np.mean(fin_sens)
+print np.mean(fin_spec)
