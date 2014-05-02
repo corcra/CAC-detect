@@ -11,8 +11,10 @@
 #               2. proper treatment of features
 
 import pystruct
-from pystruct.models import GraphCRF
+#from pystruct.models import GraphCRF
+from pystruct.models import EdgeFeatureGraphCRF
 from pystruct.learners import OneSlackSSVM
+from pystruct.plot_learning import plot_learning
 import sys
 import numpy as np
 import random
@@ -23,33 +25,60 @@ import math
 id_col = -1
 # label is the second last column
 label_col = -2
-# any other indices to drop? (this is dataspecific...)
-feature_indices = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+# feature indices...
+geometric_features = [1,2,3,4,12,13,14]
+spatial_features = [5,6,7,15]
+intensity_features = [8,9,10,11]
+# which features to use?
+feature_indices = geometric_features+spatial_features+intensity_features
+feature_indices.sort()
 # spatial indices, for calculating distances (we should be losing these anyway)
 space_indices = [16,17,18]
 # what features to use? (select this!)
 n_features = len(feature_indices)
+# for the structural information... what cutoff radii to use?
+radii = [10,50,100,150,350]
 # how many states (2)
 n_states = 2
-# what fraction of the data to use for testing?
-#train_frac = 0.9
 # how many xval?
 n_splits = 5
 # how many iterations?
-n_iter = 100
+n_iter = 1
 # how much output to give
 verbose=True
 
 # --- Inputs --- #
-if len(sys.argv)<3:
-    sys.exit("Datafile and radius please.")
+if len(sys.argv)<2:
+    sys.exit("Datafile, yo!")
 
 # datafile
 datapath=sys.argv[1]
 # radius for 'neighbourness'? (atm totally arbitrary)
-radius = sys.argv[2]
+#radius = float(sys.argv[2])
 
 # --- Functions --- #
+def include_structure(X,radii):
+    n_node = X.shape[0]
+    edges = []
+    edge_features = []
+    for n in xrange(n_node):
+        for nn in xrange(n+1,n_node):
+            this_edge_features = []
+            distance = np.linalg.norm(X[n,space_indices]-X[nn,space_indices])
+            for radius in radii:
+                if distance < radius:
+                    this_edge_features.append(1)
+                else:
+                    this_edge_features.append(0)
+            edge_features.append(this_edge_features)
+            # we have an edge between all nodes...
+            edges.append((n,nn)) 
+
+    edge_features_array = np.array(edge_features)
+    edges_array = np.array(edges)
+    return edges_array, edge_features_array
+
+# this is defunct
 def get_neighbours(X):
     n_node = X.shape[0]
     nbs = []
@@ -75,12 +104,15 @@ def prepare_data(datafile):
     examples = []
     labels = []
     for patient in data:
-        all_features= np.array(data[patient],dtype=float)
-        edges = np.array(get_neighbours(all_features))
-        patient_data = (all_features[:,feature_indices],edges)
+        patient_data = np.array(data[patient],dtype=float)
+        node_features = patient_data[:,feature_indices]
+       # edges = np.array(get_neighbours(all_features))
+        edges, edge_features = include_structure(patient_data,radii)
+       # edge_features = get_edge_features(patient_data[:,space_indices],edges)
+        example = (node_features,edges,edge_features)
         if edges.shape[0]>0:
-            examples.append(patient_data)
-            labels.append(1*(all_features[:,label_col]==0).astype(np.int32))
+            examples.append(example)
+            labels.append(1*(patient_data[:,label_col]==0).astype(np.int32))
    
     return examples, labels
 
@@ -95,14 +127,14 @@ def get_contingency(pred,true):
 
 def split_indices(n_examples,n_splits):
     shuffled = np.random.permutation(n_examples)
-    n_train = int(math.floor(float(n_examples/n_splits)))
+    n_test = int(math.floor(float(n_examples/n_splits)))
     indices = []
     for i in xrange(n_splits):
-        train_indices = shuffled[i:i+n_train]
-        test_indices = [i for i in shuffled if not i in train_indices]
+        test_indices = shuffled[i*n_test:(i+1)*n_test]
+        train_indices = [i for i in shuffled if not i in test_indices]
         indices.append((train_indices,test_indices))
-    train_indices = shuffled[i:]
-    test_indices = [i for i in shuffled if not i in train_indices]
+    test_indices = shuffled[(i+1)*n_test:]
+    train_indices = [i for i in shuffled if not i in test_indices]
     indices.append((train_indices,test_indices))
     return indices
 
@@ -119,11 +151,12 @@ if verbose:
 
 sens_all = []
 spec_all = []
+n_edges_all = []
 fin_sens = []
 fin_spec = []
 # --- Let's run xval lots of times --- #
 for j in xrange(n_iter):
-    print j
+#    print j
 
     # --- Ready for xval! --- #
     indices = split_indices(n_examples,n_splits)
@@ -131,6 +164,7 @@ for j in xrange(n_iter):
     for i in xrange(n_splits):
         train = indices[i][0]
         test = indices[i][1]
+
 
         # sure there's a more efficient way to do this
         # --- Test/train split --- #
@@ -140,8 +174,8 @@ for j in xrange(n_iter):
         Y_test = [labels[j] for j in test]
         
         # --- Train model --- #
-        model = GraphCRF(n_states,n_features)
-        ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0)
+        model = EdgeFeatureGraphCRF(n_states,n_features)
+        ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
         ssvm.fit(X_train, Y_train)
 
         # --- Test with pystruct --- #
@@ -166,9 +200,12 @@ for j in xrange(n_iter):
 #        print("Sensitivity: %f" % sens)
 #        print("Specificity: %f" % spec)
 #        print "Contingency table: (TP FP TN FN):", contingency
+        #plot_learning(ssvm,time=True)
 
     fin_sens.append(np.mean(sens_all))
     fin_spec.append(np.mean(spec_all))
+    
 
-print np.mean(fin_sens)
-print np.mean(fin_spec)
+print 'sens',np.mean(fin_sens)
+print 'spec',np.mean(fin_spec)
+
