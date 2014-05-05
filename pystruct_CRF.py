@@ -15,6 +15,7 @@ import pystruct
 from pystruct.models import EdgeFeatureGraphCRF
 from pystruct.learners import OneSlackSSVM
 from pystruct.plot_learning import plot_learning
+from sklearn.cross_validation import StratifiedKFold
 import sys
 import numpy as np
 import random
@@ -30,20 +31,32 @@ geometric_features = [1,2,3,4,12,13,14]
 spatial_features = [5,6,7,15]
 intensity_features = [8,9,10,11]
 # which features to use?
-feature_indices = geometric_features+spatial_features+intensity_features
+# THIS IS AN INEFFICIENT MESS
+#which_features = 'spatial only'
+#feature_indices = spatial_features
+which_features = 'geometric only'
+feature_indices = geometric_features
+#which_features = 'intensity only'
+#feature_indices = intensity_features
+#which_features = 'geometric and intensity features'
+#feature_indices = geometric_features+intensity_features
+#which_features = 'all features'
+#feature_indices = geometric_features+spatial_features+intensity_features
 feature_indices.sort()
 # spatial indices, for calculating distances (we should be losing these anyway)
 space_indices = [16,17,18]
 # what features to use? (select this!)
 n_features = len(feature_indices)
 # for the structural information... what cutoff radii to use?
-radii = [10,50,100,150,350]
+#radii = [10,20,50,100,150,200,350]
+#radii = [10]
+radii = map(float,sys.argv[2:])
+#radii = [0]
+n_edge_features = len(radii)
 # how many states (2)
 n_states = 2
 # how many xval?
-n_splits = 5
-# how many iterations?
-n_iter = 1
+n_splits = 10
 # how much output to give
 verbose=True
 
@@ -65,11 +78,13 @@ def include_structure(X,radii):
         for nn in xrange(n+1,n_node):
             this_edge_features = []
             distance = np.linalg.norm(X[n,space_indices]-X[nn,space_indices])
+            prevrad=0
             for radius in radii:
-                if distance < radius:
+                if prevrad < distance and distance <= radius:
                     this_edge_features.append(1)
                 else:
                     this_edge_features.append(0)
+                prevrad=radius
             edge_features.append(this_edge_features)
             # we have an edge between all nodes...
             edges.append((n,nn)) 
@@ -151,61 +166,68 @@ if verbose:
 
 sens_all = []
 spec_all = []
+acc_all = []
+rec_all = []
+prec_all = []
 n_edges_all = []
-fin_sens = []
-fin_spec = []
-# --- Let's run xval lots of times --- #
-for j in xrange(n_iter):
-#    print j
 
-    # --- Ready for xval! --- #
-    indices = split_indices(n_examples,n_splits)
+# --- Ready for xval! --- #
+indices = split_indices(n_examples,n_splits)
 
-    for i in xrange(n_splits):
-        train = indices[i][0]
-        test = indices[i][1]
+for i in xrange(n_splits):
+    train = indices[i][0]
+    test = indices[i][1]
 
 
-        # sure there's a more efficient way to do this
-        # --- Test/train split --- #
-        X_train = [examples[j] for j in train]
-        Y_train = [labels[j] for j in train]
-        X_test = [examples[j] for j in test]
-        Y_test = [labels[j] for j in test]
-        
-        # --- Train model --- #
-        model = EdgeFeatureGraphCRF(n_states,n_features)
-        ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
-        ssvm.fit(X_train, Y_train)
+    # sure there's a more efficient way to do this
+    # --- Test/train split --- #
+    X_train = [examples[j] for j in train]
+    Y_train = [labels[j] for j in train]
+    X_test = [examples[j] for j in test]
+    Y_test = [labels[j] for j in test]
+    
+    # --- Train model --- #
+    model = EdgeFeatureGraphCRF(n_states,n_features,n_edge_features)
+    ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
+    ssvm.fit(X_train, Y_train)
 
-        # --- Test with pystruct --- #
+    # --- Test with pystruct --- #
 #        print("Test score with graph CRF: %f" % ssvm.score(X_test, Y_test))
 
-        # --- Test manually - get contingency tables --- #
-        prediction = ssvm.predict(X_test)
+    # --- Test manually - get contingency tables --- #
+    prediction = ssvm.predict(X_test)
 
-        contingency = np.array([0,0,0,0])
-        for i in xrange(len(test)):
-            pred = prediction[i]
-            true = Y_test[i]
-            contingency = contingency+get_contingency(pred,true)
+    contingency = np.array([0,0,0,0])
+    for i in xrange(len(test)):
+        pred = prediction[i]
+        true = Y_test[i]
+        contingency = contingency+get_contingency(pred,true)
 
-        TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
+    TP, FP, TN, FN = contingency[0], contingency[1], contingency[2], contingency[3]
 
-        sens = float(TP)/(TP+FN)
-        sens_all.append(sens)
-        spec = float(TN)/(FP+TN)
-        spec_all.append(spec)
+#        sens = float(TP)/(TP+FN)
+#        sens_all.append(sens)
+#        spec = float(TN)/(FP+TN)
+#        spec_all.append(spec)
+    acc = float(TP+TN)/(TP+FP+TN+FN)
+    acc_all.append(acc)
+    prec = float(TP)/(TP+FP)
+    prec_all.append(prec)
+    rec = float(TP)/(TP+FN)
+    rec_all.append(rec)
+    
+#        print "train mean: %2.3f" %np.mean(map(len,Y_train)),"max:", max(map(len,Y_train)), "min:",min(map(len,Y_train)), "n:", sum(map(len,Y_train)), "mean_cac:", np.mean(map(sum,Y_train))
+#        print "test mean:  %2.3f" %np.mean(map(len,Y_test)),"max:", max(map(len,Y_test)), "min:",min(map(len,Y_test)), "sens: %2.3f" %sens
 
 #        print("Sensitivity: %f" % sens)
 #        print("Specificity: %f" % spec)
 #        print "Contingency table: (TP FP TN FN):", contingency
-        #plot_learning(ssvm,time=True)
+    #plot_learning(ssvm,time=True)
 
-    fin_sens.append(np.mean(sens_all))
-    fin_spec.append(np.mean(spec_all))
-    
 
-print 'sens',np.mean(fin_sens)
-print 'spec',np.mean(fin_spec)
+print 'Feature set:', which_features
+print 'Radii:', ','.join(map(str,radii))
+print 'accuracy: \t%2.3f' % np.mean(acc_all), 'pm %2.3f' % np.var(acc_all)
+print 'precision: \t%2.3f' % np.mean(prec_all), 'pm %2.3f' % np.var(prec_all)
+print 'recall: \t%2.3f' % np.mean(rec_all), 'pm %2.3f' % np.var(rec_all)
 
