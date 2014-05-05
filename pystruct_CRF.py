@@ -14,6 +14,7 @@ import pystruct
 #from pystruct.models import GraphCRF
 from pystruct.models import EdgeFeatureGraphCRF
 from pystruct.learners import OneSlackSSVM
+from pystruct.learners import NSlackSSVM
 from pystruct.plot_learning import plot_learning
 from sklearn.cross_validation import StratifiedKFold
 import sys
@@ -32,16 +33,16 @@ spatial_features = [5,6,7,15]
 intensity_features = [8,9,10,11]
 # which features to use?
 # THIS IS AN INEFFICIENT MESS
-#which_features = 'spatial only'
+#which_features = 'spatial_only'
 #feature_indices = spatial_features
-which_features = 'geometric only'
-feature_indices = geometric_features
-#which_features = 'intensity only'
+#which_features = 'geometric_only'
+#feature_indices = geometric_features
+#which_features = 'intensity_only'
 #feature_indices = intensity_features
-#which_features = 'geometric and intensity features'
+#which_features = 'geometric_and_intensity'
 #feature_indices = geometric_features+intensity_features
-#which_features = 'all features'
-#feature_indices = geometric_features+spatial_features+intensity_features
+which_features = 'all'
+feature_indices = geometric_features+spatial_features+intensity_features
 feature_indices.sort()
 # spatial indices, for calculating distances (we should be losing these anyway)
 space_indices = [16,17,18]
@@ -188,7 +189,8 @@ for i in xrange(n_splits):
     
     # --- Train model --- #
     model = EdgeFeatureGraphCRF(n_states,n_features,n_edge_features)
-    ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
+    ssvm = NSlackSSVM(model=model, C=.1, tol=0.001, verbose=0,show_loss_every=10)
+#    ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
     ssvm.fit(X_train, Y_train)
 
     # --- Test with pystruct --- #
@@ -224,10 +226,13 @@ for i in xrange(n_splits):
 #        print "Contingency table: (TP FP TN FN):", contingency
     #plot_learning(ssvm,time=True)
 
+if verbose:
+    print 'Feature set:', which_features
+    print 'Radii:', ','.join(map(str,radii))
+    print 'accuracy: \t%2.3f' % np.mean(acc_all), 'pm %2.3f' % np.var(acc_all)
+    print 'precision: \t%2.3f' % np.mean(prec_all), 'pm %2.3f' % np.var(prec_all)
+    print 'recall: \t%2.3f' % np.mean(rec_all), 'pm %2.3f' % np.var(rec_all)
 
-print 'Feature set:', which_features
-print 'Radii:', ','.join(map(str,radii))
-print 'accuracy: \t%2.3f' % np.mean(acc_all), 'pm %2.3f' % np.var(acc_all)
-print 'precision: \t%2.3f' % np.mean(prec_all), 'pm %2.3f' % np.var(prec_all)
-print 'recall: \t%2.3f' % np.mean(rec_all), 'pm %2.3f' % np.var(rec_all)
-
+#print ','.join(map(str,radii)), np.mean(acc_all), "acc", which_features
+#print ','.join(map(str,radii)), np.mean(prec_all), "prec", which_features
+#print ','.join(map(str,radii)), np.mean(rec_all), "rec", which_features
