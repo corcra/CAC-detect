@@ -39,13 +39,14 @@ intensity_features = [8,9,10,11]
 #feature_indices = geometric_features
 #which_features = 'intensity_only'
 #feature_indices = intensity_features
-#which_features = 'geometric_and_intensity'
+#which_features = 'geometric_and_intensity_only'
 #feature_indices = geometric_features+intensity_features
-which_features = 'all'
+which_features = 'all_only'
 feature_indices = geometric_features+spatial_features+intensity_features
 feature_indices.sort()
 # spatial indices, for calculating distances (we should be losing these anyway)
 space_indices = [16,17,18]
+mindist_index = 15
 # what features to use? (select this!)
 n_features = len(feature_indices)
 # for the structural information... what cutoff radii to use?
@@ -59,7 +60,7 @@ n_states = 2
 # how many xval?
 n_splits = 10
 # how much output to give
-verbose=True
+verbose=False
 
 # --- Inputs --- #
 if len(sys.argv)<2:
@@ -86,6 +87,11 @@ def include_structure(X,radii):
                 else:
                     this_edge_features.append(0)
                 prevrad=radius
+            # if n has a higher yl than nn... this is not a symmetric edge feature so i should probably look into that a bit more.
+#            if X[n,15]>X[nn,15]:
+#                this_edge_features.append(1)
+#            else:
+#                this_edge_features.append(0)
             edge_features.append(this_edge_features)
             # we have an edge between all nodes...
             edges.append((n,nn)) 
@@ -141,17 +147,52 @@ def get_contingency(pred,true):
     FN = sum(pred[pos]==0)
     return np.array([TP,FP,TN,FN])
 
-def split_indices(n_examples,n_splits):
-    shuffled = np.random.permutation(n_examples)
-    n_test = int(math.floor(float(n_examples/n_splits)))
+# going to include stratification here, based on the mean # CACs...
+def stratified_split(n_examples,n_splits,labels):
+    # this gives the fraction of the calc in the patient which are CAC
+    mean_cac = np.array(map(np.mean,labels))
+
+    zeroes = np.where(mean_cac==0)[0]
+    ones = np.where(mean_cac==1)[0]
+    lthalf = np.where((mean_cac<0.5)&(mean_cac!=0))[0]
+    gthalf = np.where((mean_cac>=0.5)&(mean_cac!=1))[0]
+
+    zeroes_shuff = np.random.permutation(zeroes)
+    ones_shuff = np.random.permutation(ones)
+    lthalf_shuff = np.random.permutation(lthalf)
+    gthalf_shuff = np.random.permutation(gthalf)
+
+    altogether = [zeroes_shuff,ones_shuff,lthalf_shuff,gthalf_shuff]
+#    altogether = [np.random.permutation(n_examples)]
     indices = []
+    if n_splits==1:
+        nn_splits=10
+    else:
+        nn_splits = n_splits
+
     for i in xrange(n_splits):
-        test_indices = shuffled[i*n_test:(i+1)*n_test]
-        train_indices = [i for i in shuffled if not i in test_indices]
-        indices.append((train_indices,test_indices))
-    test_indices = shuffled[(i+1)*n_test:]
-    train_indices = [i for i in shuffled if not i in test_indices]
-    indices.append((train_indices,test_indices))
+        test = []
+        train = []
+        for subclass in altogether:
+            n_examples = len(subclass)
+            n_test = int(math.floor(float(n_examples/nn_splits)))
+            test_indices = subclass[i*n_test:(i+1)*n_test].tolist()
+            train_indices = [j for j in subclass if not j in test_indices]
+            test = test + test_indices
+            train = train + train_indices
+        indices.append((test,train))
+
+    # end case, mop it up
+    test = []
+    train = []
+    for subclass in altogether:
+        n_examples = len(subclass)
+        n_test = int(math.floor(float(n_examples/nn_splits)))
+        test_indices = subclass[(i+1)*n_test:].tolist()
+        train_indices = [i for i in subclass if not i in test_indices]
+        test = test + test_indices
+        train = train + train_indices
+    indices.append((test,train))
     return indices
 
 # --- Data prep --- #
@@ -173,12 +214,13 @@ prec_all = []
 n_edges_all = []
 
 # --- Ready for xval! --- #
-indices = split_indices(n_examples,n_splits)
+indices = stratified_split(n_examples,n_splits,labels)
 
 for i in xrange(n_splits):
     train = indices[i][0]
     test = indices[i][1]
 
+    mean_cac = np.array(map(np.mean,labels))
 
     # sure there's a more efficient way to do this
     # --- Test/train split --- #
@@ -186,10 +228,13 @@ for i in xrange(n_splits):
     Y_train = [labels[j] for j in train]
     X_test = [examples[j] for j in test]
     Y_test = [labels[j] for j in test]
+#    if verbose:
+#        print np.mean(map(np.mean,Y_train)), 'pm',np.var(map(np.mean,Y_train))
+#        print np.mean(map(np.mean,Y_test)), 'pm',np.var(map(np.mean,Y_test))
     
     # --- Train model --- #
     model = EdgeFeatureGraphCRF(n_states,n_features,n_edge_features)
-    ssvm = NSlackSSVM(model=model, C=.1, tol=0.001, verbose=0,show_loss_every=10)
+    ssvm = NSlackSSVM(model=model, C=0.1, tol=0.001, verbose=0,show_loss_every=10)
 #    ssvm = OneSlackSSVM(model=model, C=.1, inference_cache=50, tol=0.1, verbose=0,show_loss_every=10)
     ssvm.fit(X_train, Y_train)
 
@@ -233,6 +278,6 @@ if verbose:
     print 'precision: \t%2.3f' % np.mean(prec_all), 'pm %2.3f' % np.var(prec_all)
     print 'recall: \t%2.3f' % np.mean(rec_all), 'pm %2.3f' % np.var(rec_all)
 
-#print ','.join(map(str,radii)), np.mean(acc_all), "acc", which_features
-#print ','.join(map(str,radii)), np.mean(prec_all), "prec", which_features
-#print ','.join(map(str,radii)), np.mean(rec_all), "rec", which_features
+print ','.join(map(str,radii)), np.mean(acc_all), "acc", which_features
+print ','.join(map(str,radii)), np.mean(prec_all), "prec", which_features
+print ','.join(map(str,radii)), np.mean(rec_all), "rec", which_features
